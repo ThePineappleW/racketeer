@@ -6,7 +6,15 @@
          racket/contract)
 
 ; Commands
-(require "commands/hello.rkt")
+; Place all your command files in the commands/ folder.
+; For convenience, just write the name of the file within that folder here.
+; We then automatically append the commands/ folder to the directory name,
+; so you don't have to keep writing it.
+; Note that if you have subfolders within commands/, you DO need to include those
+; in the directory name.
+(define cmd-files (list
+                   "hello.rkt"))
+(require (map (λ (x) (string-append "commands/")) cmd-files))
 
 (dotenv-load!)
 (define BOT-TOKEN (getenv "BOT_TOKEN"))
@@ -16,14 +24,16 @@
  'raw-message-create myclient
  (lambda (ws-client client payload)
    (unless (string=? (hash-ref (hash-ref payload 'author) 'id) (user-id client))
-     (cond
-       ; !hello : responds with hi
-       [(string-prefix? (hash-ref payload 'content) "!hello")
-        (cmd/hello client payload)]
+     ; generalized form of the command checker
+     (local [(define (cmd? str) (string-prefix? (hash-ref payload 'content) str))]
+       (cond
+         ; !hello : responds with "hi"
+         [(cmd? "!hello")
+          (cmd/hello client payload)]
 
 
        
-       ))))
+         )))))
  
 (define (user-id client)
   (hash-ref (client-user client) 'id))
