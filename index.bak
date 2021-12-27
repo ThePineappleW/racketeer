@@ -1,0 +1,145 @@
+;; The first three lines of this file were inserted by DrRacket. They record metadata
+;; about the language level of this file in a form that our tools can easily process.
+#reader(lib "htdp-intermediate-lambda-reader.ss" "lang")((modname index) (read-case-sensitive #t) (teachpacks ()) (htdp-settings #(#t constructor repeating-decimal #f #t none #f () #f)))
+#lang Racket
+
+(require racket-cord)
+(require racket/contract)
+(require json)
+(require 2htdp/image)
+(define bot-token "OTIwNTI4OTYxMDA2NjI4OTU1.YblrZg.bLOzJzwskOq_44WfvLY_ZFJTn-E")
+
+(define myclient (make-client bot-token #:auto-shard #t #:intents (list intent-guilds intent-guild-messages)))
+
+(define/contract (make-attachment data name type)
+  (-> bytes? (or/c string? bytes?) (or/c symbol? string? bytes?) http:attachment?)
+  (http:attachment data (~a type) name))
+
+(on-event
+ 'raw-message-create myclient
+ (lambda (ws-client client payload)
+   (unless (string=? (hash-ref (hash-ref payload 'author) 'id) (user-id client))
+     (cond
+
+
+       ; !hello : -> responds with hi
+       [(string-prefix? (hash-ref payload 'content) "!hello")
+        (http:create-message client (hash-ref payload 'channel_id) "hi")]
+
+
+       ; !goodbye : -> responds with bye bye
+       [(string-prefix? (hash-ref payload 'content) "!goodbye")
+        (http:create-message client (hash-ref payload 'channel_id) "bye bye")]
+
+
+       ; !length : String -> Responds with the length of the string
+       [(string-prefix? (hash-ref payload 'content) "!length")
+        (local [(define args (rest (string-split (hash-ref payload 'content))))]
+          (http:create-message client (hash-ref payload 'channel_id) (string-length (first args))))]
+
+
+       ; !caption : Image String -> Captions the image with the string
+       [(string-prefix? (hash-ref payload 'content) "!caption")
+        (local [(define args (rest (string-split (hash-ref payload 'content))))
+                (define attachments (hash-ref payload 'attachments))]
+          (if (or (empty? attachments) ; checks if there is at least one image
+                  (not (string-prefix? (hash-ref (first attachments) 'content_type) "image")))
+              (http:create-message client (hash-ref payload 'channel_id) ; Error message
+                                   "Caption requires an attachment of a recognized image file format.")
+               (http:create-message client (hash-ref payload 'channel_id) 
+                                    #:file ; build the new image
+                                    (local [(define pic (bitmap/url (hash-ref (first attachments) 'url)))
+                                            (define caption
+                                              (text
+                                               (string-join args)
+                                               50
+                                               ;(floor (/ (image-width pic) (add1 (string-length (string-join args)))))
+                                               "black"))
+                                            (define new-pic (above
+                                                             (overlay
+                                                              caption
+                                                              (rectangle (image-width pic) (+ 10 (image-height caption)) "solid" "white"))
+                                                             pic))
+                                            (define saved-pic (save-image new-pic "img.png"))]
+                                      (make-attachment
+                                       (file->bytes "img.png")
+                                       "img.png"
+                                       "image/png")))))]
+
+
+       ; !pic : -> sends the blue circle (for testing)
+       [(string-prefix? (hash-ref payload 'content) "!pic")
+        (local [(define pic (save-image (circle 50 "solid" "blue") "file.png"))]
+          (http:create-message client (hash-ref payload 'channel_id) "sent"
+                               #:file (make-attachment
+                                       (file->bytes "file.png")
+                                       "img.png"
+                                       "image/png")))]
+
+       ; !roles : -> gets the server's roles
+       [(string-prefix? (hash-ref payload 'content) "!roles")
+        (http:create-message client (hash-ref payload 'channel_id)
+                             (jsexpr->string (http:get-guild-roles
+                                              client
+                                              (hash-ref payload 'guild_id))))]
+
+       ; !colors : -> gets the server's color roles
+       [(string-prefix? (hash-ref payload 'content) "!colors")
+        (http:create-message client (hash-ref payload 'channel_id)
+                             (jsexpr->string (filter color-role?
+                                                     (http:get-guild-roles
+                                                      client
+                                                      (hash-ref payload 'guild_id)))))]
+
+       ; !set-color : Nat Nat Nat -> 
+       [(string-prefix? (hash-ref payload 'content) "!set-color")
+        (local [(define args (rest (string-split (hash-ref payload 'content))))]
+          (if (or (< 3 (length args))
+                  (not (andmap number? args))
+                  (not (andmap (λ (x) (<= 0 x 255)) args)))
+           (http:create-message client (hash-ref payload 'channel_id)
+                                "Set-color requires at least 3 numerical values within [0, 255].")
+           (local [(define r (first args))
+                   (define g (second args))
+                   (define b (third args))
+                   (define rgb-int (+ (* r ) (* g 1000) b))
+                   (define role-name (string-append "#" (number->string r) (number->string g) (number->string b)))
+                   (define id (hash-ref payload 'guild_id))]
+             (if (empty? (filter (λ (x) (string=?(hash-ref x 'name) role-name)) (get-color-roles id)))
+                 ((http:create-message
+                   client
+                   (hash-ref payload 'channel_id)
+                   (http:create-guild-role client id #hasheq((name . role-name)
+                                                             ())))
+                 ...))))]
+
+       ; !make-role : String -> makes a new role
+       [(string-prefix? (hash-ref payload 'content) "!make-role")]
+
+       ))))
+
+; color-role? : jsexpr -> Boolean
+; Is a given role a color role, prefixed by "#"?
+(define (color-role? role)
+  (string-prefix? (hash-ref role 'name) "#"))
+
+; get-color-roles : String -> [List-of jsexpr]
+; gets all color roles in the server
+(define (get-color-roles id)
+  (filter color-role? (http:get-guild-roles client id)))
+ 
+ 
+(define (user-id client)
+  (hash-ref (client-user client) 'id))
+
+(define dr (make-log-receiver discord-logger 'debug))
+ 
+(thread
+ (thunk
+  (let loop ()
+    (let ([v (sync dr)])
+      (printf "[~a] ~a\n" (vector-ref v 0)
+              (vector-ref v 1)))
+    (loop))))
+ 
+(start-client myclient)
