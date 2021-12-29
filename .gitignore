@@ -1,3 +1,4 @@
 .env
 *.bak
 compiled/
+wd.png
