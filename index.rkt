@@ -8,7 +8,8 @@
 ; Commands
 ; Place all your command files in the commands/ folder.
 ; Add your new commands to this require block.
-(require "commands/hello.rkt")
+(require "commands/hello.rkt"
+         "commands/wd.rkt")
 
 (dotenv-load!)
 (define BOT-TOKEN (getenv "BOT_TOKEN"))
@@ -28,6 +29,9 @@
          ; !hello : responds with "hi"
          [(cmd? "!hello")
           (cmd/hello client payload)]
+
+         [(cmd? "!wd")
+          (cmd/wd client payload)]
 
 
        
