@@ -23,7 +23,8 @@
 
 (struct role [emoji name color])
 
-(define TRUSTED-USER-IDS (list 
+(define TRUSTED-USER-IDS (list
+                          "270383266790506498" ; Ken
                           "269990823796539392" ; Emery
                           ))
 
@@ -130,7 +131,7 @@
   (let ([message (http:get-channel-message client
                                            (hash-ref react-payload 'channel_id)
                                            (hash-ref react-payload 'message_id))])
-    (and (member (hash-ref react-payload 'user_id) TRUSTED-USER-IDS)
+    (and (member (hash-ref (hash-ref message 'author) 'id) TRUSTED-USER-IDS)
          (string-contains? (hash-ref message 'content) POLL-MARKER))))
 
 ;; String -> List of Role
